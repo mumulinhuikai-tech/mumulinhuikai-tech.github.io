@@ -1,71 +1,154 @@
-<!doctype html>
-<html lang="zh-CN">
+<!DOCTYPE html>
+<html lang="zh">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>神旨驾到 · 小组看板</title>
-<style>
-  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial; margin:0; background:#0f1222; color:#e8ecff; }
-  .wrap { max-width: 860px; margin: 0 auto; padding: 18px; }
-  .card { background: linear-gradient(180deg,#161a2e,#14182b); border:1px solid #272b45; border-radius:16px; padding:18px; box-shadow:0 10px 30px rgba(0,0,0,.35); margin-top:14px;}
-  .title { font-size:22px; margin:0 0 4px 0;}
-  .muted { color:#aab1d6; }
-  .pill { display:inline-block; padding:6px 10px; border:1px solid #2a2f53; border-radius:999px; background:#1a1f3b; color:#b9c2ff; font-size:12px; margin-right:8px }
-  a { color:#acd0ff }
-  .btn { display:inline-block; padding:12px 14px; border-radius:12px; background:#253157; border:1px solid #2f3a66; text-decoration:none; color:#eaf1ff; font-weight:600; }
-  .list { list-style:none; padding-left:0; }
-  .list li { padding:8px 0; border-bottom:1px dashed #2a2f53; }
-</style>
+  <meta charset="UTF-8" />
+  <title>神旨驾到·营会小组看板</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    :root {
+      --bg:#0e1022; --ink:#e9edff; --muted:#a9b3da;
+      --card1:#161a2e; --card2:#14182b; --border:#272b45;
+      --pill:#1a1f3b; --pill-b:#2a2f53;
+      --btn:#243158; --btn-b:#2e3a67;
+      --accent:#8fb4ff;
+    }
+    * { box-sizing: border-box; }
+    body { margin:0; background:var(--bg); color:var(--ink); font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial; }
+    .wrap { max-width:1100px; margin:0 auto; padding:18px; }
+    .top { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+    h1 { margin:0; font-size:22px; }
+    .pill { display:inline-block; padding:6px 10px; border:1px solid var(--pill-b); border-radius:999px; background:var(--pill); color:#b9c2ff; font-size:12px; }
+    .muted { color:var(--muted); }
+    a { color:#aedaff; }
+    .card { background:linear-gradient(180deg,var(--card1),var(--card2)); border:1px solid var(--border); border-radius:16px; padding:18px; box-shadow:0 10px 30px rgba(0,0,0,.35); }
+    .section { margin-top:14px; }
+    .btn { display:inline-block; padding:10px 12px; border-radius:10px; background:var(--btn); border:1px solid var(--btn-b); text-decoration:none; color:#eaf1ff; font-weight:600; }
+    .grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(280px,1fr)); gap:14px; }
+    .name { font-size:18px; margin:0 0 6px 0; }
+    .meta { color:var(--muted); font-size:14px; margin-bottom:8px; }
+    .list { list-style:none; padding-left:0; margin:8px 0 0 0; }
+    .list li { padding:6px 0; border-bottom:1px dashed var(--pill-b); }
+    .imgbox { margin-top:10px; border:1px solid var(--pill-b); background:#121632; border-radius:12px; overflow:hidden; }
+    .imgbox img { width:100%; height:auto; display:block; }
+    .tags { display:flex; gap:8px; flex-wrap:wrap; margin-top:8px; }
+    .tag { font-size:12px; background:#1b2350; border:1px solid #2b3570; color:#c5d4ff; padding:4px 8px; border-radius:999px; }
+    .footer { color:var(--muted); font-size:12px; margin-top:8px; }
+  </style>
 </head>
 <body>
-<div class="wrap">
-  <div class="card">
-    <h1 class="title">神旨驾到 · 小组看板</h1>
-    <div id="gidLabel" class="muted"></div>
-    <div style="margin-top:8px">
-      <span class="pill">实时更新</span>
-      <span class="pill">NFC 一碰即达</span>
+  <div class="wrap">
+    <div class="card">
+      <div class="top">
+        <h1>神旨驾到·营会小组看板</h1>
+        <span class="pill">NFC 一碰即达</span>
+        <span class="pill">实时更新</span>
+      </div>
+      <div id="mode" class="muted" style="margin-top:6px"></div>
     </div>
-  </div>
 
-  <div id="content" class="card">
-    <div class="muted">正在载入数据…</div>
+    <div id="content" class="section card"><div class="muted">正在载入数据…</div></div>
   </div>
-
-  <div class="card">
-    <div class="muted">提示：若信息未刷新，尝试下拉刷新或过几秒再试。</div>
-  </div>
-</div>
 
 <script>
-  // === 配置：把下面这个地址改成你的 Cloudflare Worker 地址 ===
   const API_BASE = "https://summercamp2025si.mumulinhuikai.workers.dev";
 
-  const params = new URLSearchParams(location.search);
-  const gid = params.get("gid") || "1";
-  document.getElementById("gidLabel").textContent = "当前组别：gid=" + gid;
+  const qs = new URLSearchParams(location.search);
+  const gid  = qs.get("gid");
+  const role = qs.get("role");
+  const gidsParam = qs.get("gids");
+  const token = qs.get("token") || "";
 
-  async function load() {
+  const modeEl = document.getElementById("mode");
+  const content = document.getElementById("content");
+
+  function pick(obj, keys, fallback=null){
+    for (const k of keys) { if (obj && obj[k]!=null && obj[k] !== "") return obj[k]; }
+    return fallback;
+  }
+  function pickMembersText(obj){
+    return pick(obj, ["members","成员名单","成员"], "");
+  }
+  function toMembersArray(text){
+    return String(text).split(/[，,\n]/).map(s=>s.trim()).filter(Boolean);
+  }
+  function pickImageUrl(obj){
+    const keys = ["时间表图片","时间表","图片","scheduleImage","image","海报","行程图"];
+    for (const k of keys) {
+      const v = obj[k];
+      if (Array.isArray(v) && v.length && v[0]?.file?.url) return v[0].file.url;
+      if (typeof v === "string" && v) return v;
+    }
+    return null;
+  }
+
+  function renderCard(j, compact=false){
+    const name        = pick(j, ["groupName","组名","名称"], "未命名小组");
+    const leaders     = pick(j, ["leaders","带领","负责人"], "—");
+    const points      = pick(j, ["points","积分"], 0);
+    const announcement= pick(j, ["announcement","公告"], "");
+    const resources   = pick(j, ["resourcesLink","资源链接","链接"], null);
+    const membersText = pickMembersText(j);
+    const members     = toMembersArray(membersText);
+    const imgUrl      = pickImageUrl(j);
+
+    return `
+      <div class="card">
+        <h3 class="name">${name}</h3>
+        <div class="meta">带领：${leaders} · 积分：${points}</div>
+        ${announcement && !compact ? `<p>${announcement}</p>` : ""}
+        ${imgUrl ? `<div class="imgbox"><img src="${imgUrl}" alt="时间表图片"></div>` : ""}
+        ${!compact && members.length ? `<h4 style="margin:10px 0 6px 0">成员</h4><ul class="list">${members.map(m=>`<li>${m}</li>`).join("")}</ul>` : ""}
+        ${resources ? `<p style="margin-top:10px"><a class="btn" href="${resources}" target="_blank" rel="noopener">资料与链接</a></p>` : ""}
+        <div class="footer">最后更新：${j.lastEditedTime ? new Date(j.lastEditedTime).toLocaleString() : ""}</div>
+      </div>
+    `;
+  }
+
+  async function fetchJSON(url){
+    const r = await fetch(url);
+    const j = await r.json();
+    if (!r.ok) throw new Error(j.error || "加载失败");
+    return j;
+  }
+
+  async function run(){
     try {
-      const r = await fetch(API_BASE + "/?gid=" + encodeURIComponent(gid));
-      const j = await r.json();
-      if (!r.ok) throw new Error(j.error || "加载失败");
+      if (gid) {
+        modeEl.textContent = "模式：成员视图（单组） · gid=" + gid;
+        const j = await fetchJSON(`${API_BASE}/?gid=${encodeURIComponent(gid)}&token=${encodeURIComponent(token)}`);
+        content.innerHTML = renderCard(j, false);
+        return;
+      }
 
-      const wrap = document.getElementById("content");
-      const members = (j.members || "").split(",").map(s=>s.trim()).filter(Boolean);
-      wrap.innerHTML = `
-        <h2 style="margin-top:0">${j.groupName || "未命名小组"}</h2>
-        <p class="muted">带领：${j.leaders || "—"} · 积分：${j.points ?? 0}</p>
-        ${j.announcement ? `<p>公告：${j.announcement}</p>` : ""}
-        ${members.length ? `<h3>成员</h3><ul class="list">${members.map(m=>`<li>${m}</li>`).join("")}</ul>` : ""}
-        ${j.resourcesLink ? `<p><a class="btn" href="${j.resourcesLink}" target="_blank" rel="noopener">资料与链接</a></p>` : ""}
-        <p class="muted" style="font-size:12px">最后更新：${new Date(j.lastEditedTime).toLocaleString()}</p>
-      `;
-    } catch (e) {
-      document.getElementById("content").innerHTML = `<p>载入失败：${e.message}</p>`;
+      let cards = [];
+      if (role === "admin") {
+        modeEl.textContent = "模式：同工总览（全部小组）";
+        const data = await fetchJSON(`${API_BASE}/?role=admin&token=${encodeURIComponent(token)}`);
+        cards = data.map(row => renderCard(row, true));
+      } else if (role === "centurion") {
+        modeEl.textContent = "模式：百夫长总览";
+        if (gidsParam) {
+          const gids = gidsParam.split(",").map(s=>s.trim()).filter(Boolean);
+          const results = await Promise.all(gids.map(g => fetchJSON(`${API_BASE}/?gid=${encodeURIComponent(g)}&token=${encodeURIComponent(token)}`).catch(()=>null)));
+          cards = results.filter(Boolean).map(row => renderCard(row, true));
+        } else {
+          const data = await fetchJSON(`${API_BASE}/?role=centurion&token=${encodeURIComponent(token)}`);
+          cards = (Array.isArray(data)?data:[]).map(row => renderCard(row, true));
+        }
+      } else {
+        modeEl.textContent = "模式：总览（未指定权限）";
+        content.innerHTML = '<div class="muted">请在链接后加参数：<code>?gid=1&token=...</code> 或 <code>?role=centurion&gids=...&token=...</code> 或 <code>?role=admin&token=...</code></div>';
+        return;
+      }
+
+      content.innerHTML = `<div class="grid">${cards.join("")}</div>`;
+
+    } catch(e) {
+      content.innerHTML = `<p>载入失败：${e.message}</p>`;
     }
   }
-  load();
+
+  run();
 </script>
 </body>
 </html>
