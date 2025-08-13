@@ -5,12 +5,7 @@
   <title>神旨驾到·营会小组看板</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
-    :root {
-      --bg:#0e1022; --ink:#e9edff; --muted:#a9b3da;
-      --card1:#161a2e; --card2:#14182b; --border:#272b45;
-      --pill:#1a1f3b; --pill-b:#2a2f53;
-      --btn:#243158; --btn-b:#2e3a67;
-    }
+    :root { --bg:#0e1022; --ink:#e9edff; --muted:#a9b3da; --card1:#161a2e; --card2:#14182b; --border:#272b45; --pill:#1a1f3b; --pill-b:#2a2f53; --btn:#243158; --btn-b:#2e3a67; }
     * { box-sizing: border-box; }
     body { margin:0; background:var(--bg); color:var(--ink); font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial; }
     .wrap { max-width:1100px; margin:0 auto; padding:18px; }
@@ -32,6 +27,8 @@
     .footer { color:var(--muted); font-size:12px; margin-top:8px; }
     .kv { margin-top:10px; padding-top:8px; border-top:1px dashed var(--pill-b); font-size:14px; }
     .kv div { margin:4px 0; }
+    .banner { margin:14px 0; }
+    .banner img { width:100%; height:auto; display:block; border-radius:12px; border:1px solid var(--border); }
   </style>
 </head>
 <body>
@@ -45,6 +42,7 @@
       <div id="mode" class="muted" style="margin-top:6px"></div>
     </div>
 
+    <div id="banner"></div>
     <div id="content" class="section card"><div class="muted">正在载入数据…</div></div>
   </div>
 
@@ -56,9 +54,11 @@
   const role = qs.get("role");
   const gidsParam = qs.get("gids");
   const token = qs.get("token") || "";
+  const bannerOverride = qs.get("banner"); // 可通过 ?banner=图片URL 强制指定一张全体时间表
 
   const modeEl = document.getElementById("mode");
   const content = document.getElementById("content");
+  const bannerEl = document.getElementById("banner");
 
   const KNOWN_KEYS = new Set([
     "groupName","组名","名称",
@@ -67,7 +67,7 @@
     "announcement","公告",
     "resourcesLink","资源链接","链接",
     "members","成员名单","成员",
-    "时间表图片","时间表","图片","scheduleImage","image","海报","行程图",
+    "时间表","时间表图片","时间表1","图片","schedule","scheduleImage","image","海报","行程图",
     "lastEditedTime","gid"
   ]);
 
@@ -81,38 +81,71 @@
   function toMembersArray(text){
     return String(text).split(/[，,\n]/).map(s=>s.trim()).filter(Boolean);
   }
-  function pickImageUrl(obj){
-    const keys = ["时间表图片","时间表","图片","scheduleImage","image","海报","行程图"];
-    for (const k of keys) {
-      const v = obj[k];
-      if (Array.isArray(v) && v.length && v[0]?.file?.url) return v[0].file.url;
-      if (typeof v === "string" && v) return v;
+
+  function extractFileUrl(v){
+    if (Array.isArray(v) && v.length) {
+      const f = v[0];
+      if (f?.file?.url) return f.file.url;
+      if (f?.external?.url) return f.external.url;
     }
     return null;
   }
-  function otherFields(obj){
+
+  function pickImageUrl(obj){
+    const keys = ["时间表","时间表图片","时间表1","图片","schedule","scheduleImage","image","海报","行程图"];
+    for (const k of keys) {
+      const v = obj[k];
+      const url = extractFileUrl(v);
+      if (url) return url;
+      if (typeof v === "string" && v.startsWith("http")) return v;
+    }
+    for (const k in obj) {
+      if (!/时间|图片|image|海报|schedule/i.test(k)) continue;
+      const url = extractFileUrl(obj[k]);
+      if (url) return url;
+    }
+    return null;
+  }
+
+  function renderOtherFields(obj, {compact}){
     const kv = [];
     for (const k in obj){
       if (KNOWN_KEYS.has(k)) continue;
       const v = obj[k];
       if (v==null || v==="" ) continue;
+
+      if (compact) {
+        // 总览模式：跳过文件/图片类字段，避免出现第二张图
+        if (Array.isArray(v) && v.length && (v[0]?.file?.url || v[0]?.external?.url)) continue;
+        if (/时间|图片|image|海报|schedule/i.test(k)) continue;
+      } else {
+        if (Array.isArray(v) && v.length && (v[0]?.file?.url || v[0]?.external?.url)) {
+          const imgs = v.slice(0,2).map(it => it.file?.url || it.external?.url).filter(Boolean);
+          if (imgs.length) {
+            kv.push(`<div><strong>${k}：</strong></div>` + imgs.map(u=>`<div class="imgbox"><img src="${u}" alt="${k}"></div>`).join(""));
+            continue;
+          }
+        }
+      }
+
       let text = "";
-      if (Array.isArray(v)) text = v.map(x => typeof x === "string" ? x : JSON.stringify(x)).join("、");
-      else if (typeof v === "object") text = JSON.stringify(v);
-      else text = String(v);
+      if (typeof v === "object") { try { text = JSON.stringify(v); } catch { text = String(v); } }
+      else { text = String(v); }
       kv.push(`<div><strong>${k}：</strong>${text}</div>`);
     }
     return kv.length ? `<div class="kv">${kv.join("")}</div>` : "";
   }
 
-  function renderCard(j){
+  function renderCard(j, {compact}){
     const name        = pick(j, ["groupName","组名","名称"], "未命名小组");
     const leaders     = pick(j, ["leaders","带领","负责人"], "—");
     const points      = pick(j, ["points","积分"], 0);
     const announcement= pick(j, ["announcement","公告"], "");
     const resources   = pick(j, ["resourcesLink","资源链接","链接"], null);
     const members     = toMembersArray(pickMembersText(j));
-    const imgUrl      = pickImageUrl(j);
+
+    // 总览模式：卡片不显示时间表图片；成员模式显示
+    const imgUrl      = compact ? null : pickImageUrl(j);
 
     return `
       <div class="card">
@@ -122,10 +155,25 @@
         ${imgUrl ? `<div class="imgbox"><img src="${imgUrl}" alt="时间表图片"></div>` : ""}
         ${members.length ? `<h4 style="margin:10px 0 6px 0">成员</h4><ul class="list">${members.map(m=>`<li>${m}</li>`).join("")}</ul>` : ""}
         ${resources ? `<p style="margin-top:10px"><a class="btn" href="${resources}" target="_blank" rel="noopener">资料与链接</a></p>` : ""}
-        ${otherFields(j)}
+        ${renderOtherFields(j, {compact})}
         <div class="footer">最后更新：${j.lastEditedTime ? new Date(j.lastEditedTime).toLocaleString() : ""}</div>
       </div>
     `;
+  }
+
+  function renderBannerFromRows(rows){
+    if (bannerOverride) {
+      bannerEl.innerHTML = `<div class="banner"><div class="imgbox"><img src="${bannerOverride}" alt="全体时间表"></div></div>`;
+      return;
+    }
+    for (const row of rows) {
+      const u = pickImageUrl(row);
+      if (u) {
+        bannerEl.innerHTML = `<div class="banner"><div class="imgbox"><img src="${u}" alt="全体时间表"></div></div>`;
+        return;
+      }
+    }
+    bannerEl.innerHTML = ""; // 没有就不显示
   }
 
   async function fetchJSON(url){
@@ -140,26 +188,28 @@
       if (gid) {
         modeEl.textContent = "模式：成员视图（单组） · gid=" + gid;
         const j = await fetchJSON(`${API_BASE}/?gid=${encodeURIComponent(gid)}&token=${encodeURIComponent(token)}`);
-        content.innerHTML = renderCard(j);
+        content.innerHTML = renderCard(j, {compact:false});
         return;
       }
 
       if (role === "admin") {
-        modeEl.textContent = "模式：同工总览（全部小组·全展开）";
+        modeEl.textContent = "模式：同工总览（顶部仅 1 张全体时间表）";
         const data = await fetchJSON(`${API_BASE}/?role=admin&token=${encodeURIComponent(token)}`);
-        content.innerHTML = `<div class="grid">${data.map(renderCard).join("")}</div>`;
+        renderBannerFromRows(Array.isArray(data)?data:[]);
+        content.innerHTML = `<div class="grid">${(Array.isArray(data)?data:[]).map(row => renderCard(row, {compact:true})).join("")}</div>`;
         return;
       }
 
       if (role === "centurion") {
-        modeEl.textContent = "模式：百夫长总览（全展开）";
+        modeEl.textContent = "模式：百夫长总览（顶部仅 1 张全体时间表）";
         let data;
         if (gidsParam) {
           data = await fetchJSON(`${API_BASE}/?role=centurion&gids=${encodeURIComponent(gidsParam)}&token=${encodeURIComponent(token)}`);
         } else {
           data = await fetchJSON(`${API_BASE}/?role=centurion&token=${encodeURIComponent(token)}`);
         }
-        content.innerHTML = `<div class="grid">${(Array.isArray(data)?data:[]).map(renderCard).join("")}</div>`;
+        renderBannerFromRows(Array.isArray(data)?data:[]);
+        content.innerHTML = `<div class="grid">${(Array.isArray(data)?data:[]).map(row => renderCard(row, {compact:true})).join("")}</div>`;
         return;
       }
 
