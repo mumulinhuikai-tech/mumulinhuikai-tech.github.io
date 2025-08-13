@@ -10,7 +10,6 @@
       --card1:#161a2e; --card2:#14182b; --border:#272b45;
       --pill:#1a1f3b; --pill-b:#2a2f53;
       --btn:#243158; --btn-b:#2e3a67;
-      --accent:#8fb4ff;
     }
     * { box-sizing: border-box; }
     body { margin:0; background:var(--bg); color:var(--ink); font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial; }
@@ -30,8 +29,6 @@
     .list li { padding:6px 0; border-bottom:1px dashed var(--pill-b); }
     .imgbox { margin-top:10px; border:1px solid var(--pill-b); background:#121632; border-radius:12px; overflow:hidden; }
     .imgbox img { width:100%; height:auto; display:block; }
-    .tags { display:flex; gap:8px; flex-wrap:wrap; margin-top:8px; }
-    .tag { font-size:12px; background:#1b2350; border:1px solid #2b3570; color:#c5d4ff; padding:4px 8px; border-radius:999px; }
     .footer { color:var(--muted); font-size:12px; margin-top:8px; }
   </style>
 </head>
@@ -128,9 +125,9 @@
       } else if (role === "centurion") {
         modeEl.textContent = "模式：百夫长总览";
         if (gidsParam) {
-          const gids = gidsParam.split(",").map(s=>s.trim()).filter(Boolean);
-          const results = await Promise.all(gids.map(g => fetchJSON(`${API_BASE}/?gid=${encodeURIComponent(g)}&token=${encodeURIComponent(token)}`).catch(()=>null)));
-          cards = results.filter(Boolean).map(row => renderCard(row, true));
+          // 一次请求，避免触发成员token校验
+          const data = await fetchJSON(`${API_BASE}/?role=centurion&gids=${encodeURIComponent(gidsParam)}&token=${encodeURIComponent(token)}`);
+          cards = (Array.isArray(data) ? data : []).map(row => renderCard(row, true));
         } else {
           const data = await fetchJSON(`${API_BASE}/?role=centurion&token=${encodeURIComponent(token)}`);
           cards = (Array.isArray(data)?data:[]).map(row => renderCard(row, true));
