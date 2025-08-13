@@ -14,9 +14,9 @@
     .pill { display:inline-block; padding:6px 10px; border:1px solid var(--pill-b); border-radius:999px; background:var(--pill); color:#b9c2ff; font-size:12px; }
     .muted { color:var(--muted); }
     a { color:#aedaff; }
+    .btn { display:inline-block; padding:10px 12px; border-radius:10px; background:var(--btn); border:1px solid var(--btn-b); text-decoration:none; color:#eaf1ff; font-weight:600; }
     .card { background:linear-gradient(180deg,var(--card1),var(--card2)); border:1px solid var(--border); border-radius:16px; padding:18px; box-shadow:0 10px 30px rgba(0,0,0,.35); }
     .section { margin-top:14px; }
-    .btn { display:inline-block; padding:10px 12px; border-radius:10px; background:var(--btn); border:1px solid var(--btn-b); text-decoration:none; color:#eaf1ff; font-weight:600; }
     .grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(280px,1fr)); gap:14px; }
     .name { font-size:18px; margin:0 0 6px 0; }
     .meta { color:var(--muted); font-size:14px; margin-bottom:8px; }
@@ -26,7 +26,8 @@
     .imgbox img { width:100%; height:auto; display:block; }
     .footer { color:var(--muted); font-size:12px; margin-top:8px; }
     .kv { margin-top:10px; padding-top:8px; border-top:1px dashed var(--pill-b); font-size:14px; }
-    .kv div { margin:4px 0; }
+    .kv div { margin:6px 0; }
+    .btns { display:flex; gap:8px; flex-wrap:wrap; margin-top:6px; }
     .banner { margin:14px 0; }
     .banner img { width:100%; height:auto; display:block; border-radius:12px; border:1px solid var(--border); }
   </style>
@@ -54,7 +55,7 @@
   const role = qs.get("role");
   const gidsParam = qs.get("gids");
   const token = qs.get("token") || "";
-  const bannerOverride = qs.get("banner"); // 可通过 ?banner=图片URL 强制指定一张全体时间表
+  const bannerOverride = qs.get("banner"); // ?banner=图片URL 可手动指定横幅
 
   const modeEl = document.getElementById("mode");
   const content = document.getElementById("content");
@@ -80,6 +81,19 @@
   }
   function toMembersArray(text){
     return String(text).split(/[，,\n]/).map(s=>s.trim()).filter(Boolean);
+  }
+
+  // ---- 链接识别/按钮化 ----
+  function isURL(str){ return typeof str === "string" && /^https?:\/\//i.test(str.trim()); }
+  function extractUrls(str){
+    if (typeof str !== "string") return [];
+    const parts = str.split(/[\s,;\n\t]+/).map(s=>s.trim()).filter(Boolean);
+    return parts.filter(isURL);
+  }
+  function buttonsHTML(urls, label){
+    if (!label) label = "打开链接";
+    if (!urls.length) return "";
+    return '<div class="btns">' + urls.map(u => `<a class="btn" href="${u}" target="_blank" rel="noopener noreferrer">${label}</a>`).join("") + '</div>';
   }
 
   function extractFileUrl(v){
@@ -108,32 +122,54 @@
   }
 
   function renderOtherFields(obj, {compact}){
-    const kv = [];
+    const blocks = [];
     for (const k in obj){
       if (KNOWN_KEYS.has(k)) continue;
       const v = obj[k];
       if (v==null || v==="" ) continue;
 
       if (compact) {
-        // 总览模式：跳过文件/图片类字段，避免出现第二张图
+        // 总览：跳过文件/图片类字段，避免出现第二张图
         if (Array.isArray(v) && v.length && (v[0]?.file?.url || v[0]?.external?.url)) continue;
         if (/时间|图片|image|海报|schedule/i.test(k)) continue;
       } else {
+        // 单组：文件列可展示为图片（最多2张）
         if (Array.isArray(v) && v.length && (v[0]?.file?.url || v[0]?.external?.url)) {
           const imgs = v.slice(0,2).map(it => it.file?.url || it.external?.url).filter(Boolean);
           if (imgs.length) {
-            kv.push(`<div><strong>${k}：</strong></div>` + imgs.map(u=>`<div class="imgbox"><img src="${u}" alt="${k}"></div>`).join(""));
+            blocks.push(`<div><strong>${k}：</strong></div>` + imgs.map(u=>`<div class="imgbox"><img src="${u}" alt="${k}"></div>`).join(""));
             continue;
           }
         }
       }
 
+      // 文本：把 URL 变按钮；非 URL 正常文本
+      if (typeof v === "string") {
+        const urls = extractUrls(v);
+        if (urls.length) {
+          blocks.push(`<div><strong>${k}：</strong>${buttonsHTML(urls, `打开 ${k}`)}</div>`);
+        } else {
+          blocks.push(`<div><strong>${k}：</strong>${v}</div>`);
+        }
+        continue;
+      }
+      if (Array.isArray(v)) {
+        // 纯字符串数组 → 各自提取 URL 生成按钮；若非 URL 则拼文本
+        const urls = v.flatMap(x => typeof x === "string" ? extractUrls(x) : []);
+        if (urls.length) {
+          blocks.push(`<div><strong>${k}：</strong>${buttonsHTML(urls, `打开 ${k}`)}</div>`);
+          continue;
+        }
+        const text = v.map(x => typeof x === "string" ? x : (x && x.url ? x.url : JSON.stringify(x))).join("、");
+        blocks.push(`<div><strong>${k}：</strong>${text}</div>`);
+        continue;
+      }
+
       let text = "";
-      if (typeof v === "object") { try { text = JSON.stringify(v); } catch { text = String(v); } }
-      else { text = String(v); }
-      kv.push(`<div><strong>${k}：</strong>${text}</div>`);
+      try { text = JSON.stringify(v); } catch { text = String(v); }
+      blocks.push(`<div><strong>${k}：</strong>${text}</div>`);
     }
-    return kv.length ? `<div class="kv">${kv.join("")}</div>` : "";
+    return blocks.length ? `<div class="kv">${blocks.join("")}</div>` : "";
   }
 
   function renderCard(j, {compact}){
@@ -154,7 +190,7 @@
         ${announcement ? `<p>${announcement}</p>` : ""}
         ${imgUrl ? `<div class="imgbox"><img src="${imgUrl}" alt="时间表图片"></div>` : ""}
         ${members.length ? `<h4 style="margin:10px 0 6px 0">成员</h4><ul class="list">${members.map(m=>`<li>${m}</li>`).join("")}</ul>` : ""}
-        ${resources ? `<p style="margin-top:10px"><a class="btn" href="${resources}" target="_blank" rel="noopener">资料与链接</a></p>` : ""}
+        ${resources ? `<p class="btns" style="margin-top:10px"><a class="btn" href="${resources}" target="_blank" rel="noopener">资料与链接</a></p>` : ""}
         ${renderOtherFields(j, {compact})}
         <div class="footer">最后更新：${j.lastEditedTime ? new Date(j.lastEditedTime).toLocaleString() : ""}</div>
       </div>
@@ -186,14 +222,14 @@
   async function run(){
     try {
       if (gid) {
-        modeEl.textContent = "模式：成员视图（单组） · gid=" + gid;
+        modeEl.textContent = "模式：成员视图（单组·按钮链接） · gid=" + gid;
         const j = await fetchJSON(`${API_BASE}/?gid=${encodeURIComponent(gid)}&token=${encodeURIComponent(token)}`);
         content.innerHTML = renderCard(j, {compact:false});
         return;
       }
 
       if (role === "admin") {
-        modeEl.textContent = "模式：同工总览（顶部仅 1 张全体时间表）";
+        modeEl.textContent = "模式：同工总览（顶部 1 张全体时间表 · 链接按钮）";
         const data = await fetchJSON(`${API_BASE}/?role=admin&token=${encodeURIComponent(token)}`);
         renderBannerFromRows(Array.isArray(data)?data:[]);
         content.innerHTML = `<div class="grid">${(Array.isArray(data)?data:[]).map(row => renderCard(row, {compact:true})).join("")}</div>`;
@@ -201,7 +237,7 @@
       }
 
       if (role === "centurion") {
-        modeEl.textContent = "模式：百夫长总览（顶部仅 1 张全体时间表）";
+        modeEl.textContent = "模式：百夫长总览（顶部 1 张全体时间表 · 链接按钮）";
         let data;
         if (gidsParam) {
           data = await fetchJSON(`${API_BASE}/?role=centurion&gids=${encodeURIComponent(gidsParam)}&token=${encodeURIComponent(token)}`);
