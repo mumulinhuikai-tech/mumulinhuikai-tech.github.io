@@ -47,14 +47,16 @@
   </div>
 
 <script>
+  // === 配置你的 Worker 地址 ===
   const API_BASE = "https://summercamp2025si.mumulinhuikai.workers.dev";
 
+  // —— 读取 URL 参数 —— //
   const qs = new URLSearchParams(location.search);
   const gid  = qs.get("gid");
   const role = qs.get("role");
   const gidsParam = qs.get("gids");
   const token = qs.get("token") || "";
-  const bannerOverride = qs.get("banner"); // 可用 ?banner=图片URL 手工指定横幅
+  const bannerOverride = qs.get("banner"); // ?banner=图片URL 可手动指定横幅
 
   const modeEl = document.getElementById("mode");
   const content = document.getElementById("content");
@@ -72,7 +74,7 @@
     "lastEditedTime","gid"
   ]);
 
-  // —— 小工具 —— //
+  // —— 工具函数 —— //
   function pick(obj, keys, fallback=null){
     for (const k of keys) { if (obj && obj[k]!=null && obj[k] !== "") return obj[k]; }
     return fallback;
@@ -84,20 +86,44 @@
     return String(text).split(/[，,\n]/).map(s=>s.trim()).filter(Boolean);
   }
 
-  // URL 识别 → 多个 URL 变按钮；按钮文字 = “打开 + 列名”
-  function isURL(str){ return typeof str === "string" && /^https?:\/\//i.test(str.trim()); }
-  function extractUrls(str){
-    if (typeof str !== "string") return [];
-    const parts = str.split(/[\s,;\n\t]+/).map(s=>s.trim()).filter(Boolean);
-    return parts.filter(isURL);
+  // 1) URL 规范化：去尾部标点；www. 自动补 https://；仅允许 http/https
+  function normalizeUrl(u){
+    if (!u || typeof u !== 'string') return '';
+    u = u.trim();
+    u = u.replace(/[，。,.;；、)\]\}]+$/g, '');      // 去掉中文/英文尾标点和右括号
+    if (/^www\./i.test(u)) u = 'https://' + u;      // 补协议
+    if (!/^https?:\/\//i.test(u)) return '';        // 只接受 http/https
+    return u;
   }
+  // 2) 从任意文本提取 URL（+ 规范化）；兼容 www. 开头
+  function extractUrls(str){
+    if (typeof str !== 'string') return [];
+    const out = [];
+    const re = /(https?:\/\/[^\s'"<>\)\]\}，。；、]+)/ig;
+    let m;
+    while ((m = re.exec(str)) !== null) {
+      const nu = normalizeUrl(m[0]);
+      if (nu) out.push(nu);
+    }
+    if (out.length === 0) { // 整格只有 www.xxx.com
+      const m2 = str.match(/(^|\s)(www\.[^\s'"]+)/i);
+      if (m2) {
+        const nu2 = normalizeUrl(m2[2]);
+        if (nu2) out.push(nu2);
+      }
+    }
+    return out;
+  }
+  // 3) 生成按钮（没有合法 URL 就不渲染按钮）
   function buttonsHTML(urls, label){
     if (!label) label = "打开链接";
     if (!urls.length) return "";
-    return '<div class="btns">' + urls.map(u => `<a class="btn" href=" " target="_blank" rel="noopener noreferrer">${label}</a >`).join("") + '</div>';
+    return '<div class="btns">' + urls
+      .map(u => `<a class="btn" href=" " target="_blank" rel="noopener noreferrer">${label}</a >`)
+      .join("") + '</div>';
   }
 
-  // Notion 文件列取 URL
+  // Notion 文件/外链列取 URL
   function extractFileUrl(v){
     if (Array.isArray(v) && v.length) {
       const f = v[0];
@@ -106,7 +132,6 @@
     }
     return null;
   }
-
   // 从记录里挑一张“时间表/图片”作展示
   function pickImageUrl(obj){
     const keys = ["时间表","时间表图片","时间表1","图片","schedule","scheduleImage","image","海报","行程图"];
@@ -116,7 +141,7 @@
       if (url) return url;
       if (typeof v === "string" && v.startsWith("http")) return v;
     }
-    // 兜底：扫描所有字段名里含有“时间/图片”等关键词的文件列
+    // 兜底：扫描所有字段名里含“时间/图片”等关键词的文件列
     for (const k in obj) {
       if (!/时间|图片|image|海报|schedule/i.test(k)) continue;
       const url = extractFileUrl(obj[k]);
@@ -125,11 +150,11 @@
     return null;
   }
 
-  // 其它字段渲染
+  // 其它字段渲染（按钮文字 = 打开 + 列名）
   function renderOtherFields(obj, {compact}){
     const blocks = [];
     for (const k in obj){
-      if (KNOWN_KEYS.has(k)) continue;
+      if (KNOWN_KEYS.has(k)) continue;       // 已知字段跳过
       const v = obj[k];
       if (v==null || v==="" ) continue;
 
@@ -148,6 +173,7 @@
         }
       }
 
+      // 文本：提取 URL → 有就画按钮；没有就原样文本
       if (typeof v === "string") {
         const urls = extractUrls(v);
         if (urls.length) {
@@ -157,6 +183,8 @@
         }
         continue;
       }
+
+      // 数组：提取其中 URL → 有就按钮；没有就拼文本
       if (Array.isArray(v)) {
         const urls = v.flatMap(x => typeof x === "string" ? extractUrls(x) : []);
         if (urls.length) {
@@ -168,6 +196,7 @@
         continue;
       }
 
+      // 其它对象
       let text = "";
       try { text = JSON.stringify(v); } catch { text = String(v); }
       blocks.push(`<div><strong>${k}：</strong>${text}</div>`);
