@@ -1,92 +1,290 @@
 <!DOCTYPE html>
 <html lang="zh">
 <head>
-<meta charset="UTF-8">
-<title>神旨驾到·营会小组看板</title>
-<style>
-  body { font-family: Arial, sans-serif; background-color: #0d0d1a; color: white; }
-  .btn { background-color: #1e88e5; color: white; padding: 6px 12px; text-decoration: none; border-radius: 6px; margin: 3px; display: inline-block; }
-  .btn:hover { background-color: #1565c0; }
-  .btns { margin-top: 8px; }
-</style>
+  <meta charset="UTF-8" />
+  <title>神旨驾到·营会小组看板</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    :root { --bg:#0e1022; --ink:#e9edff; --muted:#a9b3da; --card1:#161a2e; --card2:#14182b; --border:#272b45; --pill:#1a1f3b; --pill-b:#2a2f53; --btn:#243158; --btn-b:#2e3a67; }
+    * { box-sizing: border-box; }
+    body { margin:0; background:var(--bg); color:var(--ink); font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial; }
+    .wrap { max-width:1100px; margin:0 auto; padding:18px; }
+    .top { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+    h1 { margin:0; font-size:22px; }
+    .pill { display:inline-block; padding:6px 10px; border:1px solid var(--pill-b); border-radius:999px; background:var(--pill); color:#b9c2ff; font-size:12px; }
+    .muted { color:var(--muted); }
+    .btn { display:inline-block; padding:10px 12px; border-radius:10px; background:var(--btn); border:1px solid var(--btn-b); text-decoration:none; color:#eaf1ff; font-weight:600; }
+    .card { background:linear-gradient(180deg,var(--card1),var(--card2)); border:1px solid var(--border); border-radius:16px; padding:18px; box-shadow:0 10px 30px rgba(0,0,0,.35); }
+    .section { margin-top:14px; }
+    .grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(280px,1fr)); gap:14px; }
+    .name { font-size:18px; margin:0 0 6px 0; }
+    .meta { color:var(--muted); font-size:14px; margin-bottom:8px; }
+    .list { list-style:none; padding-left:0; margin:8px 0 0 0; }
+    .list li { padding:6px 0; border-bottom:1px dashed var(--pill-b); }
+    .imgbox { margin-top:10px; border:1px solid var(--pill-b); background:#121632; border-radius:12px; overflow:hidden; }
+    .imgbox img { width:100%; height:auto; display:block; }
+    .footer { color:var(--muted); font-size:12px; margin-top:8px; }
+    .kv { margin-top:10px; padding-top:8px; border-top:1px dashed var(--pill-b); font-size:14px; }
+    .kv div { margin:6px 0; }
+    .btns { display:flex; gap:8px; flex-wrap:wrap; margin-top:6px; }
+    .banner { margin:14px 0; }
+    .banner img { width:100%; height:auto; display:block; border-radius:12px; border:1px solid var(--border); }
+  </style>
 </head>
 <body>
-<h1>神旨驾到·营会小组看板</h1>
+  <div class="wrap">
+    <div class="card">
+      <div class="top">
+        <h1>神旨驾到·营会小组看板</h1>
+        <span class="pill">NFC 一碰即达</span>
+        <span class="pill">实时更新</span>
+      </div>
+      <div id="mode" class="muted" style="margin-top:6px"></div>
+    </div>
 
-<div id="content"></div>
+    <div id="banner"></div>
+    <div id="content" class="section card"><div class="muted">正在载入数据…</div></div>
+  </div>
 
 <script>
-function normalizeUrl(u){
-  if (!u || typeof u !== 'string') return '';
-  u = u.trim();
-  u = u.replace(/[，。,.;；、)\]\}]+$/g, '');
-  if (/^www\./i.test(u)) u = 'https://' + u;
-  if (!/^https?:\/\//i.test(u)) return '';
-  return u;
-}
+  const API_BASE = "https://summercamp2025si.mumulinhuikai.workers.dev";
 
-function extractUrls(str){
-  if (typeof str !== 'string') return [];
-  const out = [];
-  const re = /(https?:\/\/[^\s'"<>\)\]\}，。；、]+)/ig;
-  let m;
-  while ((m = re.exec(str)) !== null) {
-    const nu = normalizeUrl(m[0]);
-    if (nu) out.push(nu);
+  const qs = new URLSearchParams(location.search);
+  const gid  = qs.get("gid");
+  const role = qs.get("role");
+  const gidsParam = qs.get("gids");
+  const token = qs.get("token") || "";
+  const bannerOverride = qs.get("banner"); // 可用 ?banner=图片URL 手工指定横幅
+
+  const modeEl = document.getElementById("mode");
+  const content = document.getElementById("content");
+  const bannerEl = document.getElementById("banner");
+
+  // 这些键被当作“已知字段”，不会再出现在“其它字段”里
+  const KNOWN_KEYS = new Set([
+    "groupName","组名","名称",
+    "leaders","带领","负责人",
+    "points","积分",
+    "announcement","公告",
+    "resourcesLink","资源链接","链接",
+    "members","成员名单","成员",
+    "时间表","时间表图片","时间表1","图片","schedule","scheduleImage","image","海报","行程图",
+    "lastEditedTime","gid"
+  ]);
+
+  // —— 小工具 —— //
+  function pick(obj, keys, fallback=null){
+    for (const k of keys) { if (obj && obj[k]!=null && obj[k] !== "") return obj[k]; }
+    return fallback;
   }
-  if (out.length === 0) {
-    const m2 = str.match(/(^|\s)(www\.[^\s'"]+)/i);
-    if (m2) {
-      const nu2 = normalizeUrl(m2[2]);
-      if (nu2) out.push(nu2);
+  function pickMembersText(obj){
+    return pick(obj, ["members","成员名单","成员"], "");
+  }
+  function toMembersArray(text){
+    return String(text).split(/[，,\n]/).map(s=>s.trim()).filter(Boolean);
+  }
+
+  // URL 识别 → 多个 URL 变按钮；按钮文字 = “打开 + 列名”
+  function isURL(str){ return typeof str === "string" && /^https?:\/\//i.test(str.trim()); }
+  function extractUrls(str){
+    if (typeof str !== "string") return [];
+    const parts = str.split(/[\s,;\n\t]+/).map(s=>s.trim()).filter(Boolean);
+    return parts.filter(isURL);
+  }
+  function buttonsHTML(urls, label){
+    if (!label) label = "打开链接";
+    if (!urls.length) return "";
+    return '<div class="btns">' + urls.map(u => `<a class="btn" href=" " target="_blank" rel="noopener noreferrer">${label}</a >`).join("") + '</div>';
+  }
+
+  // Notion 文件列取 URL
+  function extractFileUrl(v){
+    if (Array.isArray(v) && v.length) {
+      const f = v[0];
+      if (f?.file?.url) return f.file.url;
+      if (f?.external?.url) return f.external.url;
     }
+    return null;
   }
-  return out;
-}
 
-function buttonsHTML(urls, label){
-  if (!label) label = "打开链接";
-  if (!urls.length) return "";
-  return '<div class="btns">' + urls
-    .map(u => `<a class="btn" href="${u}" target="_blank" rel="noopener noreferrer">${label}</a>`)
-    .join("") + '</div>';
-}
+  // 从记录里挑一张“时间表/图片”作展示
+  function pickImageUrl(obj){
+    const keys = ["时间表","时间表图片","时间表1","图片","schedule","scheduleImage","image","海报","行程图"];
+    for (const k of keys) {
+      const v = obj[k];
+      const url = extractFileUrl(v);
+      if (url) return url;
+      if (typeof v === "string" && v.startsWith("http")) return v;
+    }
+    // 兜底：扫描所有字段名里含有“时间/图片”等关键词的文件列
+    for (const k in obj) {
+      if (!/时间|图片|image|海报|schedule/i.test(k)) continue;
+      const url = extractFileUrl(obj[k]);
+      if (url) return url;
+    }
+    return null;
+  }
 
-function renderOtherFields(obj){
-  const blocks = [];
-  for (const [k, v] of Object.entries(obj)) {
-    if (typeof v === "string") {
-      const urls = extractUrls(v);
-      if (urls.length) {
-        blocks.push(`<div><strong>${k}：</strong>${buttonsHTML(urls, '打开 ' + k)}</div>`);
+  // 其它字段渲染
+  function renderOtherFields(obj, {compact}){
+    const blocks = [];
+    for (const k in obj){
+      if (KNOWN_KEYS.has(k)) continue;
+      const v = obj[k];
+      if (v==null || v==="" ) continue;
+
+      if (compact) {
+        // 总览：跳过文件/图片类字段，避免重复时间表
+        if (Array.isArray(v) && v.length && (v[0]?.file?.url || v[0]?.external?.url)) continue;
+        if (/时间|图片|image|海报|schedule/i.test(k)) continue;
       } else {
-        blocks.push(`<div><strong>${k}：</strong>${v}</div>`);
+        // 单组：文件列以图片展示（最多2张）
+        if (Array.isArray(v) && v.length && (v[0]?.file?.url || v[0]?.external?.url)) {
+          const imgs = v.slice(0,2).map(it => it.file?.url || it.external?.url).filter(Boolean);
+          if (imgs.length) {
+            blocks.push(`<div><strong>${k}：</strong></div>` + imgs.map(u=>`<div class="imgbox">< img src="${u}" alt="${k}"></div>`).join(""));
+            continue;
+          }
+        }
       }
-      continue;
-    }
-    if (Array.isArray(v)) {
-      const urls = v.flatMap(x => typeof x === "string" ? extractUrls(x) : []);
-      if (urls.length) {
-        blocks.push(`<div><strong>${k}：</strong>${buttonsHTML(urls, '打开 ' + k)}</div>`);
+
+      if (typeof v === "string") {
+        const urls = extractUrls(v);
+        if (urls.length) {
+          blocks.push(`<div><strong>${k}：</strong>${buttonsHTML(urls, '打开 ' + k)}</div>`);
+        } else {
+          blocks.push(`<div><strong>${k}：</strong>${v}</div>`);
+        }
         continue;
       }
-      const text = v.map(x => typeof x === "string" ? x : (x && x.url ? x.url : JSON.stringify(x))).join("、");
+      if (Array.isArray(v)) {
+        const urls = v.flatMap(x => typeof x === "string" ? extractUrls(x) : []);
+        if (urls.length) {
+          blocks.push(`<div><strong>${k}：</strong>${buttonsHTML(urls, '打开 ' + k)}</div>`);
+          continue;
+        }
+        const text = v.map(x => typeof x === "string" ? x : (x && x.url ? x.url : JSON.stringify(x))).join("、");
+        blocks.push(`<div><strong>${k}：</strong>${text}</div>`);
+        continue;
+      }
+
+      let text = "";
+      try { text = JSON.stringify(v); } catch { text = String(v); }
       blocks.push(`<div><strong>${k}：</strong>${text}</div>`);
-      continue;
     }
-    blocks.push(`<div><strong>${k}：</strong>${JSON.stringify(v)}</div>`);
+    return blocks.length ? `<div class="kv">${blocks.join("")}</div>` : "";
   }
-  return blocks.join("");
-}
 
-// 示例数据
-const example = {
-  "夏令营敬拜歌曲": "https://music.youtube.com/playlist?list=PLHry6DiwpVwuXp2vUMLVmBdD5hwSVGPUm",
-  "纪律": "2222",
-  "备注": "请准时到场"
-};
+  // 单张卡片
+  function renderCard(j, {compact}){
+    const name        = pick(j, ["groupName","组名","名称"], "未命名小组");
+    const leaders     = pick(j, ["leaders","带领","负责人"], "—");
+    const points      = pick(j, ["points","积分"], 0);
+    const announcement= pick(j, ["announcement","公告"], "");
+    const resources   = pick(j, ["resourcesLink","资源链接","链接"], null);
+    const members     = toMembersArray(pickMembersText(j));
+    // 总览卡片不显示时间表；单组显示
+    const imgUrl      = (compact ? null : pickImageUrl(j));
 
-document.getElementById("content").innerHTML = renderOtherFields(example);
+    return `
+      <div class="card">
+        <h3 class="name">${name}</h3>
+        <div class="meta">带领：${leaders} · 积分：${points}</div>
+        ${announcement ? `<p>${announcement}</p >` : ""}
+        ${imgUrl ? `<div class="imgbox">< img src="${imgUrl}" alt="时间表图片"></div>` : ""}
+        ${members.length ? `<h4 style="margin:10px 0 6px 0">成员</h4><ul class="list">${members.map(m=>`<li>${m}</li>`).join("")}</ul>` : ""}
+        ${resources ? `<p class="btns" style="margin-top:10px"><a class="btn" href="${resources}" target="_blank" rel="noopener">资料与链接</a ></p >` : ""}
+        ${renderOtherFields(j, {compact})}
+        <div class="footer">最后更新：${j.lastEditedTime ? new Date(j.lastEditedTime).toLocaleString() : ""}</div>
+      </div>
+    `;
+  }
+
+  // 解析 gid（兼容多种字段名/字符串），用于排序
+  function parseGid(row){
+    const candidates = [row.gid, row['# gid'], row['gid'], row['编号'], row['ID']];
+    for (const v of candidates){
+      if (v==null) continue;
+      const n = parseInt(String(v).replace(/[^\d]/g,''), 10);
+      if (!isNaN(n)) return n;
+    }
+    const name = row.groupName || row['组名'] || row['名称'] || '';
+    const m = String(name).match(/\d+/);
+    return m ? parseInt(m[0],10) : 9999;
+  }
+
+  // 顶部统一时间表横幅 —— 用 innerHTML；注意 <img> 没有空格
+  function renderBannerFromRows(rows){
+    if (bannerOverride) {
+      bannerEl.innerHTML =
+        '<div class="banner"><div class="imgbox">< img src="' +
+        bannerOverride +
+        '" alt="全体时间表"></div></div>';
+      return;
+    }
+    for (const row of rows) {
+      const u = pickImageUrl(row);
+      if (u) {
+        bannerEl.innerHTML =
+          '<div class="banner"><div class="imgbox">< img src="' +
+          u +
+          '" alt="全体时间表"></div></div>';
+        return;
+      }
+    }
+    bannerEl.innerHTML = ''; // 没有就不显示
+  }
+
+  async function fetchJSON(url){
+    const r = await fetch(url);
+    const j = await r.json();
+    if (!r.ok) throw new Error(j.error || "加载失败");
+    return j;
+  }
+
+  async function run(){
+    try {
+      if (gid) {
+        modeEl.textContent = "模式：成员视图（单组·按钮链接） · gid=" + gid;
+        const j = await fetchJSON(`${API_BASE}/?gid=${encodeURIComponent(gid)}&token=${encodeURIComponent(token)}`);
+        content.innerHTML = renderCard(j, {compact:false});
+        return;
+      }
+
+      if (role === "admin") {
+        modeEl.textContent = "模式：同工总览（顶部统一时间表 · 已排序）";
+        let data = await fetchJSON(`${API_BASE}/?role=admin&token=${encodeURIComponent(token)}`);
+        if (!Array.isArray(data)) data = [];
+        data.sort((a,b)=>parseGid(a)-parseGid(b));
+        renderBannerFromRows(data);
+        content.innerHTML = `<div class="grid">${data.map(row => renderCard(row, {compact:true})).join("")}</div>`;
+        return;
+      }
+
+      if (role === "centurion") {
+        modeEl.textContent = "模式：百夫长总览（顶部统一时间表 · 已排序）";
+        let data;
+        if (gidsParam) {
+          data = await fetchJSON(`${API_BASE}/?role=centurion&gids=${encodeURIComponent(gidsParam)}&token=${encodeURIComponent(token)}`);
+        } else {
+          data = await fetchJSON(`${API_BASE}/?role=centurion&token=${encodeURIComponent(token)}`);
+        }
+        if (!Array.isArray(data)) data = [];
+        data.sort((a,b)=>parseGid(a)-parseGid(b));
+        renderBannerFromRows(data);
+        content.innerHTML = `<div class="grid">${data.map(row => renderCard(row, {compact:true})).join("")}</div>`;
+        return;
+      }
+
+      modeEl.textContent = "模式：总览（未指定权限）";
+      content.innerHTML = '<div class="muted">请在链接后加参数：<code>?gid=1&token=...</code> / <code>?role=centurion&gids=...&token=...</code> / <code>?role=admin&token=...</code></div>';
+
+    } catch(e) {
+      content.innerHTML = `<p>载入失败：${e.message}</p >`;
+    }
+  }
+
+  run();
 </script>
 </body>
 </html>
