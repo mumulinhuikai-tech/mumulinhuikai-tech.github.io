@@ -13,7 +13,6 @@
     h1 { margin:0; font-size:22px; }
     .pill { display:inline-block; padding:6px 10px; border:1px solid var(--pill-b); border-radius:999px; background:var(--pill); color:#b9c2ff; font-size:12px; }
     .muted { color:var(--muted); }
-    a { color:#aedaff; }
     .btn { display:inline-block; padding:10px 12px; border-radius:10px; background:var(--btn); border:1px solid var(--btn-b); text-decoration:none; color:#eaf1ff; font-weight:600; }
     .card { background:linear-gradient(180deg,var(--card1),var(--card2)); border:1px solid var(--border); border-radius:16px; padding:18px; box-shadow:0 10px 30px rgba(0,0,0,.35); }
     .section { margin-top:14px; }
@@ -55,7 +54,7 @@
   const role = qs.get("role");
   const gidsParam = qs.get("gids");
   const token = qs.get("token") || "";
-  const bannerOverride = qs.get("banner"); // ?banner=图片URL 可手动指定横幅
+  const bannerOverride = qs.get("banner");
 
   const modeEl = document.getElementById("mode");
   const content = document.getElementById("content");
@@ -83,7 +82,6 @@
     return String(text).split(/[，,\n]/).map(s=>s.trim()).filter(Boolean);
   }
 
-  // ---- 链接识别/按钮化 ----
   function isURL(str){ return typeof str === "string" && /^https?:\/\//i.test(str.trim()); }
   function extractUrls(str){
     if (typeof str !== "string") return [];
@@ -93,7 +91,7 @@
   function buttonsHTML(urls, label){
     if (!label) label = "打开链接";
     if (!urls.length) return "";
-    return '<div class="btns">' + urls.map(u => `<a class="btn" href="${u}" target="_blank" rel="noopener noreferrer">${label}</a>`).join("") + '</div>';
+    return '<div class="btns">' + urls.map(u => `<a class="btn" href=" " target="_blank" rel="noopener noreferrer">${label}</a >`).join("") + '</div>';
   }
 
   function extractFileUrl(v){
@@ -129,35 +127,31 @@
       if (v==null || v==="" ) continue;
 
       if (compact) {
-        // 总览：跳过文件/图片类字段，避免出现第二张图
         if (Array.isArray(v) && v.length && (v[0]?.file?.url || v[0]?.external?.url)) continue;
         if (/时间|图片|image|海报|schedule/i.test(k)) continue;
       } else {
-        // 单组：文件列可展示为图片（最多2张）
         if (Array.isArray(v) && v.length && (v[0]?.file?.url || v[0]?.external?.url)) {
           const imgs = v.slice(0,2).map(it => it.file?.url || it.external?.url).filter(Boolean);
           if (imgs.length) {
-            blocks.push(`<div><strong>${k}：</strong></div>` + imgs.map(u=>`<div class="imgbox"><img src="${u}" alt="${k}"></div>`).join(""));
+            blocks.push(`<div><strong>${k}：</strong></div>` + imgs.map(u=>`<div class="imgbox">< img src="${u}" alt="${k}"></div>`).join(""));
             continue;
           }
         }
       }
 
-      // 文本：把 URL 变按钮；非 URL 正常文本
       if (typeof v === "string") {
         const urls = extractUrls(v);
         if (urls.length) {
-          blocks.push(`<div><strong>${k}：</strong>${buttonsHTML(urls, `打开 ${k}`)}</div>`);
+          blocks.push(`<div><strong>${k}：</strong>${buttonsHTML(urls, '打开 ' + k)}</div>`);
         } else {
           blocks.push(`<div><strong>${k}：</strong>${v}</div>`);
         }
         continue;
       }
       if (Array.isArray(v)) {
-        // 纯字符串数组 → 各自提取 URL 生成按钮；若非 URL 则拼文本
         const urls = v.flatMap(x => typeof x === "string" ? extractUrls(x) : []);
         if (urls.length) {
-          blocks.push(`<div><strong>${k}：</strong>${buttonsHTML(urls, `打开 ${k}`)}</div>`);
+          blocks.push(`<div><strong>${k}：</strong>${buttonsHTML(urls, '打开 ' + k)}</div>`);
           continue;
         }
         const text = v.map(x => typeof x === "string" ? x : (x && x.url ? x.url : JSON.stringify(x))).join("、");
@@ -179,37 +173,47 @@
     const announcement= pick(j, ["announcement","公告"], "");
     const resources   = pick(j, ["resourcesLink","资源链接","链接"], null);
     const members     = toMembersArray(pickMembersText(j));
-
-    // 总览模式：卡片不显示时间表图片；成员模式显示
     const imgUrl      = compact ? null : pickImageUrl(j);
 
     return `
       <div class="card">
         <h3 class="name">${name}</h3>
         <div class="meta">带领：${leaders} · 积分：${points}</div>
-        ${announcement ? `<p>${announcement}</p>` : ""}
-        ${imgUrl ? `<div class="imgbox"><img src="${imgUrl}" alt="时间表图片"></div>` : ""}
+        ${announcement ? `<p>${announcement}</p >` : ""}
+        ${imgUrl ? `<div class="imgbox">< img src="${imgUrl}" alt="时间表图片"></div>` : ""}
         ${members.length ? `<h4 style="margin:10px 0 6px 0">成员</h4><ul class="list">${members.map(m=>`<li>${m}</li>`).join("")}</ul>` : ""}
-        ${resources ? `<p class="btns" style="margin-top:10px"><a class="btn" href="${resources}" target="_blank" rel="noopener">资料与链接</a></p>` : ""}
+        ${resources ? `<p class="btns" style="margin-top:10px"><a class="btn" href="${resources}" target="_blank" rel="noopener">资料与链接</a ></p >` : ""}
         ${renderOtherFields(j, {compact})}
         <div class="footer">最后更新：${j.lastEditedTime ? new Date(j.lastEditedTime).toLocaleString() : ""}</div>
       </div>
     `;
   }
 
+  function parseGid(row){
+    const candidates = [row.gid, row['# gid'], row['gid'], row['编号'], row['ID']];
+    for (const v of candidates){
+      if (v==null) continue;
+      const n = parseInt(String(v).replace(/[^\d]/g,''), 10);
+      if (!isNaN(n)) return n;
+    }
+    const name = row.groupName || row['组名'] || row['名称'] || '';
+    const m = String(name).match(/\d+/);
+    return m ? parseInt(m[0],10) : 9999;
+  }
+
   function renderBannerFromRows(rows){
     if (bannerOverride) {
-      bannerEl.innerHTML = `<div class="banner"><div class="imgbox"><img src="${bannerOverride}" alt="全体时间表"></div></div>`;
+      bannerEl.innerHTML = `<div class="banner"><div class="imgbox">< img src="${bannerOverride}" alt="全体时间表"></div></div>`;
       return;
     }
     for (const row of rows) {
       const u = pickImageUrl(row);
       if (u) {
-        bannerEl.innerHTML = `<div class="banner"><div class="imgbox"><img src="${u}" alt="全体时间表"></div></div>`;
+        bannerEl.innerHTML = `<div class="banner"><div class="imgbox">< img src="${u}" alt="全体时间表"></div></div>`;
         return;
       }
     }
-    bannerEl.innerHTML = ""; // 没有就不显示
+    bannerEl.innerHTML = "";
   }
 
   async function fetchJSON(url){
@@ -229,31 +233,35 @@
       }
 
       if (role === "admin") {
-        modeEl.textContent = "模式：同工总览（顶部 1 张全体时间表 · 链接按钮）";
-        const data = await fetchJSON(`${API_BASE}/?role=admin&token=${encodeURIComponent(token)}`);
-        renderBannerFromRows(Array.isArray(data)?data:[]);
-        content.innerHTML = `<div class="grid">${(Array.isArray(data)?data:[]).map(row => renderCard(row, {compact:true})).join("")}</div>`;
+        modeEl.textContent = "模式：同工总览（已排序）";
+        let data = await fetchJSON(`${API_BASE}/?role=admin&token=${encodeURIComponent(token)}`);
+        if (!Array.isArray(data)) data = [];
+        data.sort((a,b)=>parseGid(a)-parseGid(b));
+        renderBannerFromRows(data);
+        content.innerHTML = `<div class="grid">${data.map(row => renderCard(row, {compact:true})).join("")}</div>`;
         return;
       }
 
       if (role === "centurion") {
-        modeEl.textContent = "模式：百夫长总览（顶部 1 张全体时间表 · 链接按钮）";
+        modeEl.textContent = "模式：百夫长总览（已排序）";
         let data;
         if (gidsParam) {
           data = await fetchJSON(`${API_BASE}/?role=centurion&gids=${encodeURIComponent(gidsParam)}&token=${encodeURIComponent(token)}`);
         } else {
           data = await fetchJSON(`${API_BASE}/?role=centurion&token=${encodeURIComponent(token)}`);
         }
-        renderBannerFromRows(Array.isArray(data)?data:[]);
-        content.innerHTML = `<div class="grid">${(Array.isArray(data)?data:[]).map(row => renderCard(row, {compact:true})).join("")}</div>`;
+        if (!Array.isArray(data)) data = [];
+        data.sort((a,b)=>parseGid(a)-parseGid(b));
+        renderBannerFromRows(data);
+        content.innerHTML = `<div class="grid">${data.map(row => renderCard(row, {compact:true})).join("")}</div>`;
         return;
       }
 
       modeEl.textContent = "模式：总览（未指定权限）";
-      content.innerHTML = '<div class="muted">请在链接后加参数：<code>?gid=1&token=...</code> 或 <code>?role=centurion&gids=...&token=...</code> 或 <code>?role=admin&token=...</code></div>';
+      content.innerHTML = '<div class="muted">请在链接后加参数</div>';
 
     } catch(e) {
-      content.innerHTML = `<p>载入失败：${e.message}</p>`;
+      content.innerHTML = `<p>载入失败：${e.message}</p >`;
     }
   }
 
