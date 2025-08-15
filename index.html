@@ -167,7 +167,7 @@
         if (Array.isArray(v) && v.length && (v[0]?.file?.url || v[0]?.external?.url)) {
           const imgs = v.slice(0,2).map(it => it.file?.url || it.external?.url).filter(Boolean);
           if (imgs.length) {
-            blocks.push(`<div><strong>${k}：</strong></div>` + imgs.map(u=>`<div class="imgbox">< img src="${u}" alt="${k}"></div>`).join(""));
+            blocks.push(`<div><strong>${k}：</strong></div>` + imgs.map(u=>`<div class="imgbox"><img src="${u}" alt="${k}"></div>`).join(""));
             continue;
           }
         }
@@ -220,7 +220,7 @@
         <h3 class="name">${name}</h3>
         <div class="meta">带领：${leaders} · 积分：${points}</div>
         ${announcement ? `<p>${announcement}</p >` : ""}
-        ${imgUrl ? `<div class="imgbox">< img src="${imgUrl}" alt="时间表图片"></div>` : ""}
+        ${imgUrl ? `<div class="imgbox"><img src="${imgUrl}" alt="时间表图片"></div>` : ""}
         ${members.length ? `<h4 style="margin:10px 0 6px 0">成员</h4><ul class="list">${members.map(m=>`<li>${m}</li>`).join("")}</ul>` : ""}
         ${resources ? `<p class="btns" style="margin-top:10px"><a class="btn" href="${resources}" target="_blank" rel="noopener">资料与链接</a ></p >` : ""}
         ${renderOtherFields(j, {compact})}
@@ -246,7 +246,7 @@
   function renderBannerFromRows(rows){
     if (bannerOverride) {
       bannerEl.innerHTML =
-        '<div class="banner"><div class="imgbox">< img src="' +
+        '<div class="banner"><div class="imgbox"><img src="' +
         bannerOverride +
         '" alt="全体时间表"></div></div>';
       return;
@@ -255,7 +255,7 @@
       const u = pickImageUrl(row);
       if (u) {
         bannerEl.innerHTML =
-          '<div class="banner"><div class="imgbox">< img src="' +
+          '<div class="banner"><div class="imgbox"><img src="' +
           u +
           '" alt="全体时间表"></div></div>';
         return;
