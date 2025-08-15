@@ -71,14 +71,23 @@ const KNOWN_KEYS = new Set([
   "lastEditedTime","gid"
 ]);
 
-// --- 修复链接跳回问题 ---
+// --- 链接处理（强制新标签打开） ---
 function normalizeUrl(u) {
   if (!u || typeof u !== 'string') return '';
-  u = u.trim();
-  u = u.replace(/[，。,.;；：、)\]\}】）》〉]+$/g, '');
+  u = u.trim().replace(/[，。,.;；：、)\]\}】）》〉]+$/g, '');
   if (/^www\./i.test(u)) u = 'https://' + u;
   if (!/^https?:\/\//i.test(u)) u = 'https://' + u;
   return u;
+}
+function openLink(e) {
+  e.preventDefault();
+  e.stopPropagation();
+  const a = e.currentTarget;
+  const link = normalizeUrl(a.getAttribute('data-href') || a.getAttribute('href') || '');
+  if (!link) return false;
+  const w = window.open(link, '_blank');
+  if (!w) location.href = link; // 兜底
+  return false;
 }
 function extractUrls(str) {
   if (typeof str !== 'string') return [];
@@ -101,14 +110,16 @@ function extractUrls(str) {
 function buttonsHTML(urls, label) {
   if (!label) label = "打开链接";
   if (!urls.length) return "";
-  return '<div class="btns">' + urls
-    .map(u => {
-      const link = normalizeUrl(u);
-      return `<a class="btn" href=" " target="_blank" rel="noopener noreferrer">${label}</a >`;
-    })
-    .join("") + '</div>';
+  const esc = s => String(s).replace(/&/g,"&amp;").replace(/"/g,"&quot;").replace(/</g,"&lt;");
+  return '<div class="btns">' + urls.map(u => {
+    const link = normalizeUrl(u);
+    if (!link) return '';
+    const safe = esc(link);
+    return `<a class="btn" href=" " data-href="${safe}" target="_blank" rel="noopener noreferrer" onclick="return openLink(event);">${label}</a >`;
+  }).join("") + '</div>';
 }
 
+// --- 其它工具函数 ---
 function pick(obj, keys, fallback=null) {
   for (const k of keys) { if (obj && obj[k]!=null && obj[k] !== "") return obj[k]; }
   return fallback;
@@ -143,12 +154,10 @@ function renderOtherFields(obj, {compact}) {
     if (KNOWN_KEYS.has(k)) continue;
     const v = obj[k];
     if (v==null || v==="" ) continue;
-
     if (compact) {
       if (Array.isArray(v) && v.length && (v[0]?.file?.url || v[0]?.external?.url)) continue;
       if (/时间|图片|image|海报|schedule/i.test(k)) continue;
     }
-
     if (typeof v === "string") {
       const urls = extractUrls(v);
       if (urls.length) {
@@ -171,7 +180,6 @@ function renderOtherFields(obj, {compact}) {
   }
   return blocks.length ? `<div class="kv">${blocks.join("")}</div>` : "";
 }
-
 function renderCard(j, {compact}) {
   const name        = pick(j, ["groupName","组名","名称"], "未命名小组");
   const leaders     = pick(j, ["leaders","带领","负责人"], "—");
@@ -181,7 +189,6 @@ function renderCard(j, {compact}) {
   const resources   = resourcesRaw ? normalizeUrl(resourcesRaw) : "";
   const members     = toMembersArray(pickMembersText(j));
   const imgUrl      = (compact ? null : pickImageUrl(j));
-
   return `
     <div class="card">
       <h3 class="name">${name}</h3>
@@ -189,13 +196,12 @@ function renderCard(j, {compact}) {
       ${announcement ? `<p>${announcement}</p >` : ""}
       ${imgUrl ? `<div class="imgbox">< img src="${imgUrl}" alt="时间表图片"></div>` : ""}
       ${members.length ? `<h4 style="margin:10px 0 6px 0">成员</h4><ul class="list">${members.map(m=>`<li>${m}</li>`).join("")}</ul>` : ""}
-      ${resources ? `<p class="btns" style="margin-top:10px"><a class="btn" href="${resources}" target="_blank" rel="noopener">资料与链接</a ></p >` : ""}
+      ${resources ? `<p class="btns" style="margin-top:10px"><a class="btn" href="${resources}" data-href="${resources}" target="_blank" rel="noopener" onclick="return openLink(event);">资料与链接</a ></p >` : ""}
       ${renderOtherFields(j, {compact})}
       <div class="footer">最后更新：${j.lastEditedTime ? new Date(j.lastEditedTime).toLocaleString() : ""}</div>
     </div>
   `;
 }
-
 function parseGid(row) {
   const candidates = [row.gid, row['# gid'], row['gid'], row['编号'], row['ID']];
   for (const v of candidates) {
