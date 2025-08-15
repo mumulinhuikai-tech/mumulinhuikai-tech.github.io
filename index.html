@@ -54,12 +54,13 @@
   const role = qs.get("role");
   const gidsParam = qs.get("gids");
   const token = qs.get("token") || "";
-  const bannerOverride = qs.get("banner");
+  const bannerOverride = qs.get("banner"); // 可用 ?banner=图片URL 手工指定横幅
 
   const modeEl = document.getElementById("mode");
   const content = document.getElementById("content");
   const bannerEl = document.getElementById("banner");
 
+  // 这些键被当作“已知字段”，不会再出现在“其它字段”里
   const KNOWN_KEYS = new Set([
     "groupName","组名","名称",
     "leaders","带领","负责人",
@@ -71,6 +72,7 @@
     "lastEditedTime","gid"
   ]);
 
+  // —— 小工具 —— //
   function pick(obj, keys, fallback=null){
     for (const k of keys) { if (obj && obj[k]!=null && obj[k] !== "") return obj[k]; }
     return fallback;
@@ -82,6 +84,7 @@
     return String(text).split(/[，,\n]/).map(s=>s.trim()).filter(Boolean);
   }
 
+  // URL 识别 → 多个 URL 变按钮；按钮文字 = “打开 + 列名”
   function isURL(str){ return typeof str === "string" && /^https?:\/\//i.test(str.trim()); }
   function extractUrls(str){
     if (typeof str !== "string") return [];
@@ -94,6 +97,7 @@
     return '<div class="btns">' + urls.map(u => `<a class="btn" href=" " target="_blank" rel="noopener noreferrer">${label}</a >`).join("") + '</div>';
   }
 
+  // Notion 文件列取 URL
   function extractFileUrl(v){
     if (Array.isArray(v) && v.length) {
       const f = v[0];
@@ -103,6 +107,7 @@
     return null;
   }
 
+  // 从记录里挑一张“时间表/图片”作展示
   function pickImageUrl(obj){
     const keys = ["时间表","时间表图片","时间表1","图片","schedule","scheduleImage","image","海报","行程图"];
     for (const k of keys) {
@@ -111,6 +116,7 @@
       if (url) return url;
       if (typeof v === "string" && v.startsWith("http")) return v;
     }
+    // 兜底：扫描所有字段名里含有“时间/图片”等关键词的文件列
     for (const k in obj) {
       if (!/时间|图片|image|海报|schedule/i.test(k)) continue;
       const url = extractFileUrl(obj[k]);
@@ -119,6 +125,7 @@
     return null;
   }
 
+  // 其它字段渲染
   function renderOtherFields(obj, {compact}){
     const blocks = [];
     for (const k in obj){
@@ -127,9 +134,11 @@
       if (v==null || v==="" ) continue;
 
       if (compact) {
+        // 总览：跳过文件/图片类字段，避免重复时间表
         if (Array.isArray(v) && v.length && (v[0]?.file?.url || v[0]?.external?.url)) continue;
         if (/时间|图片|image|海报|schedule/i.test(k)) continue;
       } else {
+        // 单组：文件列以图片展示（最多2张）
         if (Array.isArray(v) && v.length && (v[0]?.file?.url || v[0]?.external?.url)) {
           const imgs = v.slice(0,2).map(it => it.file?.url || it.external?.url).filter(Boolean);
           if (imgs.length) {
@@ -166,6 +175,7 @@
     return blocks.length ? `<div class="kv">${blocks.join("")}</div>` : "";
   }
 
+  // 单张卡片
   function renderCard(j, {compact}){
     const name        = pick(j, ["groupName","组名","名称"], "未命名小组");
     const leaders     = pick(j, ["leaders","带领","负责人"], "—");
@@ -173,7 +183,8 @@
     const announcement= pick(j, ["announcement","公告"], "");
     const resources   = pick(j, ["resourcesLink","资源链接","链接"], null);
     const members     = toMembersArray(pickMembersText(j));
-    const imgUrl      = compact ? null : pickImageUrl(j);
+    // 总览卡片不显示时间表；单组显示
+    const imgUrl      = (compact ? null : pickImageUrl(j));
 
     return `
       <div class="card">
@@ -189,6 +200,7 @@
     `;
   }
 
+  // 解析 gid（兼容多种字段名/字符串），用于排序
   function parseGid(row){
     const candidates = [row.gid, row['# gid'], row['gid'], row['编号'], row['ID']];
     for (const v of candidates){
@@ -201,19 +213,26 @@
     return m ? parseInt(m[0],10) : 9999;
   }
 
+  // 顶部统一时间表横幅 —— 用 innerHTML；注意 <img> 没有空格
   function renderBannerFromRows(rows){
     if (bannerOverride) {
-      bannerEl.innerHTML = `<div class="banner"><div class="imgbox">< img src="${bannerOverride}" alt="全体时间表"></div></div>`;
+      bannerEl.innerHTML =
+        '<div class="banner"><div class="imgbox">< img src="' +
+        bannerOverride +
+        '" alt="全体时间表"></div></div>';
       return;
     }
     for (const row of rows) {
       const u = pickImageUrl(row);
       if (u) {
-        bannerEl.innerHTML = `<div class="banner"><div class="imgbox">< img src="${u}" alt="全体时间表"></div></div>`;
+        bannerEl.innerHTML =
+          '<div class="banner"><div class="imgbox">< img src="' +
+          u +
+          '" alt="全体时间表"></div></div>';
         return;
       }
     }
-    bannerEl.innerHTML = "";
+    bannerEl.innerHTML = ''; // 没有就不显示
   }
 
   async function fetchJSON(url){
@@ -233,7 +252,7 @@
       }
 
       if (role === "admin") {
-        modeEl.textContent = "模式：同工总览（已排序）";
+        modeEl.textContent = "模式：同工总览（顶部统一时间表 · 已排序）";
         let data = await fetchJSON(`${API_BASE}/?role=admin&token=${encodeURIComponent(token)}`);
         if (!Array.isArray(data)) data = [];
         data.sort((a,b)=>parseGid(a)-parseGid(b));
@@ -243,7 +262,7 @@
       }
 
       if (role === "centurion") {
-        modeEl.textContent = "模式：百夫长总览（已排序）";
+        modeEl.textContent = "模式：百夫长总览（顶部统一时间表 · 已排序）";
         let data;
         if (gidsParam) {
           data = await fetchJSON(`${API_BASE}/?role=centurion&gids=${encodeURIComponent(gidsParam)}&token=${encodeURIComponent(token)}`);
@@ -258,7 +277,7 @@
       }
 
       modeEl.textContent = "模式：总览（未指定权限）";
-      content.innerHTML = '<div class="muted">请在链接后加参数</div>';
+      content.innerHTML = '<div class="muted">请在链接后加参数：<code>?gid=1&token=...</code> / <code>?role=centurion&gids=...&token=...</code> / <code>?role=admin&token=...</code></div>';
 
     } catch(e) {
       content.innerHTML = `<p>载入失败：${e.message}</p >`;
